@@ -1,0 +1,10 @@
+edge-tts
+faiss-cpu
+librosa
+noisereduce
+numpy
+scipy
+soundfile
+soxr
+torch
+transformers

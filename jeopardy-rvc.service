@@ -1,0 +1,14 @@
+[Unit]
+Description="save in /etc/systemd/system/jeopardy-rvc.service, systemctl enable jeopardy-rvc.service, systemctl start jeopardy-rvc.service"
+
+[Service]
+ExecStart=/usr/bin/python3 /home/howardc/jeopardy-rvc/server.py
+WorkingDirectory=/home/howardc/jeopardy-rvc
+Restart=always
+RestartSec=3
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=JEOPARDY_RVC
+
+[Install]
+WantedBy=multi-user.target
