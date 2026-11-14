@@ -3,6 +3,7 @@ faiss-cpu
 librosa
 noisereduce
 numpy
+portalocker
 scipy
 soundfile
 soxr

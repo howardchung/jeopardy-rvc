@@ -7,7 +7,6 @@ communicates with the Node.js server via newline-delimited JSON on stdin/stdout.
 from __future__ import annotations
 
 import asyncio
-import fcntl
 import io
 import json
 import math
@@ -22,6 +21,8 @@ import warnings
 import zipfile
 from itertools import chain
 from pathlib import Path
+
+import portalocker
 
 # Keep real stdout exclusively for JSON protocol messages; send all library output to stderr
 _protocol_out = sys.stdout
@@ -1196,45 +1197,41 @@ def download_if_missing(url: str, dest: Path):
 def ensure_models():
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     lock_path = MODELS_DIR / ".init.lock"
-    with open(lock_path, "w") as lock_file:
-        fcntl.flock(lock_file, fcntl.LOCK_EX)
-        try:
-            if not (TREBEK_PTH.is_file() and TREBEK_INDEX.is_file()):
-                TREBEK_DIR.mkdir(parents=True, exist_ok=True)
-                if all(p.is_file() for p in TREBEK_ZIP_PARTS):
-                    print(
-                        f"[rvc_worker] Extracting {', '.join(p.name for p in TREBEK_ZIP_PARTS)} -> {TREBEK_DIR}",
-                        file=sys.stderr,
-                    )
-                    combined = io.BytesIO(
-                        b"".join(p.read_bytes() for p in TREBEK_ZIP_PARTS)
-                    )
-                    with zipfile.ZipFile(combined, "r") as zf:
-                        zf.extractall(TREBEK_DIR)
-                elif TREBEK_ZIP.is_file():
-                    print(
-                        f"[rvc_worker] Extracting {TREBEK_ZIP} -> {TREBEK_DIR}",
-                        file=sys.stderr,
-                    )
-                    with zipfile.ZipFile(TREBEK_ZIP, "r") as zf:
-                        zf.extractall(TREBEK_DIR)
-                else:
-                    missing = [str(p) for p in TREBEK_ZIP_PARTS if not p.is_file()]
-                    raise FileNotFoundError(
-                        f"Missing AlexTrebek model archive parts: {', '.join(missing)}"
-                    )
+    with portalocker.Lock(lock_path, "w", flags=portalocker.LOCK_EX):
+        if not (TREBEK_PTH.is_file() and TREBEK_INDEX.is_file()):
+            TREBEK_DIR.mkdir(parents=True, exist_ok=True)
+            if all(p.is_file() for p in TREBEK_ZIP_PARTS):
+                print(
+                    f"[rvc_worker] Extracting {', '.join(p.name for p in TREBEK_ZIP_PARTS)} -> {TREBEK_DIR}",
+                    file=sys.stderr,
+                )
+                combined = io.BytesIO(
+                    b"".join(p.read_bytes() for p in TREBEK_ZIP_PARTS)
+                )
+                with zipfile.ZipFile(combined, "r") as zf:
+                    zf.extractall(TREBEK_DIR)
+            elif TREBEK_ZIP.is_file():
+                print(
+                    f"[rvc_worker] Extracting {TREBEK_ZIP} -> {TREBEK_DIR}",
+                    file=sys.stderr,
+                )
+                with zipfile.ZipFile(TREBEK_ZIP, "r") as zf:
+                    zf.extractall(TREBEK_DIR)
+            else:
+                missing = [str(p) for p in TREBEK_ZIP_PARTS if not p.is_file()]
+                raise FileNotFoundError(
+                    f"Missing AlexTrebek model archive parts: {', '.join(missing)}"
+                )
 
-            download_if_missing(f"{HF_RESOURCES_BASE}/predictors/rmvpe.pt", RMVPE_PATH)
-            download_if_missing(
-                f"{HF_RESOURCES_BASE}/embedders/contentvec/config.json",
-                CONTENTVEC_DIR / "config.json",
-            )
-            download_if_missing(
-                f"{HF_RESOURCES_BASE}/embedders/contentvec/pytorch_model.bin",
-                CONTENTVEC_DIR / "pytorch_model.bin",
-            )
-        finally:
-            fcntl.flock(lock_file, fcntl.LOCK_UN)
+        download_if_missing(f"{HF_RESOURCES_BASE}/predictors/rmvpe.pt", RMVPE_PATH)
+        download_if_missing(
+            f"{HF_RESOURCES_BASE}/embedders/contentvec/config.json",
+            CONTENTVEC_DIR / "config.json",
+        )
+        download_if_missing(
+            f"{HF_RESOURCES_BASE}/embedders/contentvec/pytorch_model.bin",
+            CONTENTVEC_DIR / "pytorch_model.bin",
+        )
 
 
 def load_hubert_contentvec(device: str) -> HubertModelWithFinalProj:
